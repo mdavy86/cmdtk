@@ -1,0 +1,70 @@
+#!perl
+# -*- mode: perl; -*-
+use Applify;
+use Mojo::Base -base;
+use Text::Table::Tiny qw{generate_table};
+
+documentation __FILE__;
+
+extends 'Mojo::Base';
+
+option str  => delimiter => "delimiter to use", default => "\t";
+option str  => id_column => "column for id", default => 0;
+option flag => read_head => "input has header", default => 1;
+
+has header  => sub { [] };
+
+sub read {
+  my $self = shift;
+  return $self unless $self->result == 0;
+  my @idcol = split /,/, $self->id_column;
+  (my $delim = $self->delimiter) =~ s/[+*]//;
+  my $regex = $self->regex;
+  my %data;
+  push @{$self->header}, (split $regex, <STDIN>, 0)[@idcol, -1]
+    if $self->read_head;
+  while (<STDIN>) {
+    chomp;
+    my (@F) = split $regex, $_, 0;
+    $data{join $delim, @F[@idcol]}++;
+  }
+  $self->{data} = \%data;
+  return $self;
+}
+
+has regex => sub {
+  my $self  = shift;
+  my $delim = $self->delimiter;
+  return qr/$delim/;
+};
+
+has result  => 0;
+
+sub table {
+  my $self  = shift;
+  my $regex = $self->regex;
+  my $data  = $self->{data};
+  return [
+    $self->header,
+    sort { $b->[-1] <=> $a->[-1] || $a->[0] cmp $b->[0] }
+    map  { [ split($regex, $_), $data->{$_} ] } keys %$data
+  ];
+}
+
+sub write {
+  my $self = shift;
+  my $data = $self->table();
+  $data->[0][-1] = 'Frequency' if $self->{read_head};
+  say generate_table( rows => $data, header_row => 1 );
+  return $self;
+}
+
+app {
+  return shift->read->write->result;
+};
+
+=pod
+
+=head1 NAME
+
+=cut
