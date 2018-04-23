@@ -8,25 +8,33 @@ documentation __FILE__;
 
 extends 'Mojo::Base';
 
+option flag => cumulative => "report cumulative", default => 0;
 option str  => delimiter => "delimiter to use", default => "\t";
 option str  => id_column => "column for id", default => 0;
 option flag => read_head => "input has header", default => 1;
 
 has header  => sub { [] };
 
+sub read_header {
+  my ($self, $fh, $regex, $idcol) = @_;
+  my $line = <$fh>;
+  chomp $line;
+  push @{$self->header}, (split $regex, $line, 0)[@$idcol];
+  return $self;
+}
+
 sub read {
   my $self = shift;
   return $self unless $self->result == 0;
-  my @idcol = split /,/, $self->id_column;
+  my $idcol = $self->slice;
   (my $delim = $self->delimiter) =~ s/[+*]//;
   my $regex = $self->regex;
   my %data;
-  push @{$self->header}, (split $regex, <STDIN>, 0)[@idcol, -1]
-    if $self->read_head;
+  $self->read_header(\*STDIN, $regex, $idcol) if $self->read_head;
   while (<STDIN>) {
     chomp;
     my (@F) = split $regex, $_, 0;
-    $data{join $delim, @F[@idcol]}++;
+    $data{join $delim, @F[@$idcol]}++;
   }
   $self->{data} = \%data;
   return $self;
@@ -40,13 +48,24 @@ has regex => sub {
 
 has result  => 0;
 
+has slice => sub { return [ split /,/, $_[0]->id_column ]};
+
 sub table {
   my $self  = shift;
   my $regex = $self->regex;
   my $data  = $self->{data};
+  my $desc  = sub { $b->[-1] <=> $a->[-1] || $a->[0] cmp $b->[0] };
+  my $asc   = sub { $b->[-1] <=> $a->[-1] || $a->[0] cmp $b->[0] };
+  my $sort_func = $desc;
+  my $i = 0;
+  my $c = $self->cumulative;
+  my $header = $self->header;
+  push @$header, 'frequency'  if $self->read_head;
+  push @$header, 'cumulative' if $self->read_head && $c;
   return [
-    $self->header,
-    sort { $b->[-1] <=> $a->[-1] || $a->[0] cmp $b->[0] }
+    ($self->read_head ? $header : ()),
+    map  { [ @$_, ($c ? $i+=$_->[-1] : ()) ]  }
+    sort { $sort_func->() }
     map  { [ split($regex, $_), $data->{$_} ] } keys %$data
   ];
 }
@@ -54,8 +73,7 @@ sub table {
 sub write {
   my $self = shift;
   my $data = $self->table();
-  $data->[0][-1] = 'Frequency' if $self->{read_head};
-  say generate_table( rows => $data, header_row => 1 );
+  say generate_table( rows => $data, header_row => $self->read_head );
   return $self;
 }
 
