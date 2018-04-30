@@ -1,0 +1,82 @@
+#!/usr/bin/perl
+
+use Mojo::Base -base;
+use Mojo::Collection 'c';
+use Applify;
+use Text::Table::Tiny qw{generate_table};
+
+extends 'Mojo::Base';
+
+documentation __FILE__;
+
+has app_result => -1;
+has entries    => sub { return {} };
+
+sub get_entries {
+    my $self = shift;
+    
+    $self->{entries}{$_} ||= c($self->get_pwent($_)) 
+        for grep { length } map { split /\W/ } @_;
+
+    return $self;
+}
+
+sub get_pwent {
+    my ($self, $id) = @_;
+    
+    return undef unless defined($id);
+
+    return getpwuid($id) if $id =~ /^\d+$/;
+
+    return getpwnam($id);
+}
+
+sub report_entries {
+    my $self = shift;
+
+    my $entries = $self->entries;
+
+    my $table = c(map { c($_, $entries->{$_}) } keys %$entries)
+        ->map
+        (sub {
+            $_->tap(sub { 
+                splice(@$_, 1, 3, 
+                       ( $_->[1]->size > 0
+                         ? $_->[1]->slice(2, 0, 6)->each 
+                         : c(qw{unknown} x 3)->each)) });
+         })
+        ->sort(sub { $a->[0] cmp $b->[0] })
+        ->tap
+        (sub {
+            unshift @$_, [ qw{query uid username name}];            
+         });
+
+
+    say generate_table( rows => $table, header_row => 1 );
+
+    return $self;
+}
+
+app {
+    return shift->get_entries(@_)->report_entries->app_result;
+};
+
+=pod
+
+=head1 NAME
+
+finger - same same, but diff
+
+=head1 DESCRIPTION
+
+=head1 SYNOPSIS
+
+Examples:
+
+ getent group www | xargs perl ./scripts/finger
+
+=cut
+
+## Local Variables:
+## mode: perl
+## End:
