@@ -8,6 +8,7 @@ $t->help_ok
   ->documentation_ok
   ->is_option('cumulative')
   ->is_option('delimiter')
+  ->is_option('descending')
   ->is_option('id-column')
   ->is_option('read-head');
 
@@ -15,6 +16,7 @@ my $app = $t->app_instance;
 is $app->delimiter, "\t", 'default is tab';
 is $app->id_column, 0, 'default is 1';
 is $app->read_head, 1, 'default to read head';
+is $app->descending, 1, 'default is descending';
 
 $app = $t->app_instance(qw{-delimiter}, ' ');
 is $app->delimiter, ' ', 'space understood';
@@ -35,6 +37,9 @@ is_deeply $app->slice, [2], 'correct';
 
 $app = $t->app_instance(qw{-no-read-head});
 is $app->read_head, 0, 'off';
+
+$app = $t->app_instance(qw{-no-descending});
+is $app->descending, 0, 'ascending';
 
 open(my $oldin, "<&", \*STDIN) or die "Can't duplicate STDIN: $!";
 open(STDIN, '<&', \*DATA)      or die "Can't duplicate DATA: $!";
@@ -63,6 +68,7 @@ table_ok $t,
     args => [qw{-id-column 2 -cumulative}],
     test => sub {
       my ($app, $e, $so, $se, $r) = @_;
+      is $se, '', 'empty stderr';
       is $so, <<EOF, 'table printed';
 +------+-----------+------------+
 | NAME | frequency | cumulative |
@@ -78,6 +84,7 @@ EOF
     args => [qw{-id-column 2}],
     test => sub {
       my ($app, $e, $so, $se, $r) = @_;
+      is $se, '', 'empty stderr';
       is $so, <<EOF, 'table printed';
 +------+-----------+
 | NAME | frequency |
@@ -89,10 +96,27 @@ EOF
 EOF
     },
   },
+  descending => {
+    args => [qw{-id-column 2 -no-descending}],
+    test => sub {
+      my ($app, $e, $so, $se, $r) = @_;
+      is $se, '', 'empty stderr';
+      is $so, <<EOF, 'table printed';
++------+-----------+
+| NAME | frequency |
++------+-----------+
+| John | 1         |
+| Sam  | 2         |
+| Jane | 3         |
++------+-----------+
+EOF
+    },
+  },
   noheader => {
     args => [qw{-no-read-head -id-column 1}],
     test => sub {
       my ($app, $e, $so, $se, $r) = @_;
+      is $se, '', 'empty stderr';
       is $so, <<EOF, 'table';
 +--------+---+
 | data   | 1 |

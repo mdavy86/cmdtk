@@ -9,9 +9,10 @@ documentation __FILE__;
 extends 'Mojo::Base';
 
 option flag => cumulative => "report cumulative", default => 0;
-option str  => delimiter => "delimiter to use", default => "\t";
-option str  => id_column => "column for id", default => 0;
-option flag => read_head => "input has header", default => 1;
+option str  => delimiter  => "delimiter to use",  default => "\t";
+option flag => descending => "sort descending",   default => 1;
+option str  => id_column  => "column for id",     default => 0;
+option flag => read_head  => "input has header",  default => 1;
 
 has header  => sub { [] };
 
@@ -55,8 +56,8 @@ sub table {
   my $regex = $self->regex;
   my $data  = $self->{data};
   my $desc  = sub { $b->[-1] <=> $a->[-1] || $a->[0] cmp $b->[0] };
-  my $asc   = sub { $b->[-1] <=> $a->[-1] || $a->[0] cmp $b->[0] };
-  my $sort_func = $desc;
+  my $asc   = sub { $a->[-1] <=> $b->[-1] || $b->[0] cmp $a->[0] };
+  my $sort_func = $self->descending ? $desc : $asc;
   my $i = 0;
   my $c = $self->cumulative;
   my $header = $self->header;
@@ -84,5 +85,28 @@ app {
 =pod
 
 =head1 NAME
+
+table - command line table() from R
+
+=head1 DESCRIPTION
+
+Often there is a need to translate data such as found below into a frequency
+table. This script is setup to do that.
+
+  id	data	NAME
+  1	first	John
+  2	second	Jane
+  3	third	Jane
+  4	fourth	Jane
+  5	fifth	Sam
+  6	sixth	Sam
+
+=head1 SYNOPSIS
+
+  table [options]
+
+Example:
+
+  cmd_creating_output | table -delimiter ' +' -id-column 1,2
 
 =cut
