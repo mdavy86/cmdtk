@@ -1,8 +1,9 @@
-#!perl
+#!/usr/bin/env perl
 # -*- mode: perl; -*-
 use Applify;
 use Mojo::Base -base;
 use Text::Table::Tiny qw{generate_table};
+use IO::Interactive qw{is_interactive};
 
 documentation __FILE__;
 
@@ -13,6 +14,7 @@ option str  => delimiter  => "delimiter to use",  default => "\t";
 option flag => descending => "sort descending",   default => 1;
 option str  => id_column  => "column for id",     default => 0;
 option flag => read_head  => "input has header",  default => 1;
+option str  => columns    => "column names when using --noread-head";
 
 has header  => sub { [] };
 
@@ -31,9 +33,11 @@ sub read {
   (my $delim = $self->delimiter) =~ s/[+*]//;
   my $regex = $self->regex;
   my %data;
+  $self->_columns_to_header();
   $self->read_header(\*STDIN, $regex, $idcol) if $self->read_head;
   while (<STDIN>) {
     chomp;
+    next unless /^\w/;
     my (@F) = split $regex, $_, 0;
     $data{join $delim, @F[@$idcol]}++;
   }
@@ -61,6 +65,7 @@ sub table {
   my $i = 0;
   my $c = $self->cumulative;
   my $header = $self->header;
+  $self->read_head(1) if @$header;
   push @$header, 'frequency'  if $self->read_head;
   push @$header, 'cumulative' if $self->read_head && $c;
   return [
@@ -78,8 +83,18 @@ sub write {
   return $self;
 }
 
+sub _columns_to_header {
+    my $self = shift;
+    return $self unless $self->columns;
+    $self->read_head(0);
+    my $idcol = $self->slice;
+    push @{$self->header}, (split /,/, $self->columns)[0 .. $#$idcol];
+    return $self;
+}
+
 app {
-  return shift->read->write->result;
+    shift->_script->print_help if is_interactive;
+    return shift->read->write->result;
 };
 
 =pod

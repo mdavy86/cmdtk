@@ -1,6 +1,7 @@
 ## -*- mode: perl; -*-
 
 requires 'Applify' => '0.14';
+requires 'IO::Interactive' => '1.0';
 requires 'Mojolicious' => '7.69';
 requires 'Text::Table::Tiny' => '0.04';
 
