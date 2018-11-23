@@ -1,0 +1,72 @@
+#!/usr/bin/env perl
+# -*- mode: perl; -*-
+use Mojo::Base -base;
+use Mojo::Collection 'c';
+use Text::Table::Tiny 'generate_table';
+use Mojo::CSV;
+use Applify;
+documentation __FILE__;
+extends 'Mojo::Base';
+version our $VERSION = 0.1;
+
+my @COL_KEYS = qw(JOBS Q_NORM Q_LOWP PEND RUN SSUSP SLOTS);
+
+option flag => csv => 'create comma separated values', default => 0;
+
+has app_result => 0;
+
+has by_user => sub {
+    shift->matrix->reduce(
+        sub {
+            my (undef, $user, $state, $queue, undef, $exe) = @$b;
+            my $slots = $exe =~ tr/:/:/ + 1;
+            my $data  = $a->{$user} ||= { map { $_ => 0 } @COL_KEYS };
+            $data->{JOBS}++;
+            $data->{uc join '_', 'Q', substr($queue, 0, 4)}++;
+            $data->{SLOTS}  += $slots unless $state eq 'PEND';
+            $data->{$state} += $slots;
+            $a;
+        }, {});
+};
+
+has matrix => sub {
+    c(split /\n/, `bjobs -u all -w`)           ## lines from command
+        ->tap(sub { shift @$_; })              ## remove header row
+        ->map(sub { return c(split /\s+/); }); ## split into columns
+};
+
+sub output {
+    my ($self, $out) = (shift, c());
+    my $by = $self->by_user;
+
+    push @$out, c($_, @{$by->{$_}}{@COL_KEYS}) for keys %$by;
+
+    if ($self->csv) {
+        say Mojo::CSV->new->text(
+            $out->sort(sub { $b->[7] <=> $a->[7] })
+            ->tap(sub { unshift @$_, c('USER', @COL_KEYS); }));
+    } else {
+        say generate_table(
+            rows => $out->sort(sub { $b->[7] <=> $a->[7] })
+                        ->tap(sub { unshift @$_, c('USER', @COL_KEYS); }),
+            header_row => 1
+        );
+    }
+    return $self;
+}
+
+app {
+    return shift->output->app_result;
+};
+
+=encoding utf8
+
+=head1 NAME
+
+slots-by-user - report user slot state.
+
+=head1 SYNOPSIS
+
+  slots-by-user
+
+=cut
