@@ -1,0 +1,174 @@
+#!/usr/bin/env perl
+# -*- mode: perl; -*-
+
+package Job;
+
+use Mojo::Base -base;
+
+my $index_re = qr/\[([0-9]+)\]$/;
+
+has [qw/jobid user state queue name is_array/];
+
+has is_array => sub {
+    my $self = shift;
+    $self->jobindex($1) && return 1 if ($self->name =~ m/$index_re/);
+    return 0;
+};
+
+has jobindex => sub {
+    my $self = shift;
+    $self->is_array(1) && return $1 if ($self->name =~ m/$index_re/);
+    return 0;
+};
+
+has canonical_jobid => sub {
+    my $self = shift;
+    my @fmt  = (
+        $self->is_array
+        ? ('%d[%d]', $self->jobid, $self->jobindex) 
+        : ('%d', $self->jobid)
+        );
+    return sprintf $fmt[0], @fmt[1 .. $#fmt];
+};
+
+1;
+
+package main;
+
+use Mojo::Base -base;
+use Applify;
+use Mojo::Collection 'c';
+use Mojo::Collection::Role::UtilsBy;
+use Mojo::Util qw{dumper};
+
+extends 'Mojo::Base';
+
+version our $VERSION = 0.01;
+
+option str => from   => 'queue to switch from     [lowpriority]', default => 'lowpriority';
+option str => to     => 'queue to switch to       [normal]', default => 'normal';
+option int => target => 'target number of to jobs [400]', default => 400;
+
+my $job_id_re = qr/^\d/;
+
+has app_result => 0;
+
+has switched => 0;
+
+has user => sub { return $ENV{USER} };
+
+sub jobs {
+    my $self = shift;
+    my @cmd  = (qw{bjobs -w -u}, $self->user);
+    my $jobs = c();
+    open(my $fh, '-|', "@cmd") or die "cannot do that";
+    while(my $line = <$fh>) {
+        next unless $line =~ m/$job_id_re/;
+        my %job;
+        @job{qw{jobid user state queue name}} =
+            c(split /\s+/, $line)->slice(0, 1, 2, 3, 6)->each;
+        push @$jobs, Job->new(%job);
+    }
+    close $fh;
+    return $jobs;
+}
+
+sub queue_filter {
+    my ($self, $jobs, $queue) = @_;
+    return $jobs->grep(sub { $_->queue eq $queue });
+}
+
+sub state_filter {
+    my ($self, $jobs, $state) = @_;
+    return $jobs->grep(sub { $_->state eq $state });
+}
+
+sub fisher_yates_shuffle {
+    my $self = shift;
+    my $array = shift->grep(sub { 1 });
+    for(my $upper=scalar(@$array);--$upper;) {
+        my $lower=int(rand($upper+1));
+        next if $lower == $upper;
+        @$array[$lower,$upper] = @$array[$upper,$lower];
+    }
+    return $array;
+}
+
+sub switch {
+    my ($self, $collection) = @_;
+    my $bundled = $collection
+        ->grep(sub {1})
+        ->with_roles('+UtilsBy')
+        ->bundle_by(sub { c(@_) }, 20);
+
+    my @bswitch = ('bswitch', $self->to);
+
+    for my $jobs($bundled->each) {
+        my @cmd = (@bswitch, $jobs->map(sub { $_->canonical_jobid })->each);
+        system { $cmd[0] } @cmd;
+    }
+}
+
+app {
+    my $self = shift;
+
+    $self->switched;
+    my $jobs = $self->jobs;
+    my $from = $self->queue_filter($jobs, $self->from);
+    my $to   = $self->queue_filter($jobs, $self->to);
+    my $from_run  = $self->state_filter($from, 'RUN');
+    my $from_pend = $self->state_filter($from, 'PEND');
+    my $to_run    = $self->state_filter($to, 'RUN');
+    my $max       = $self->target;
+    my $max_pend  = int($max * 0.2); ## 20%?
+
+    ## There must be an urgent need
+    if ($from_pend->size > $to->size + 1e4) {
+        my $to_running = $to_run->size;
+        my $to_pending = $to->size - $to_running; ## ignore other states
+        
+        if ((my $needed = $max - $to_running) > 1 && $to_pending < $max_pend) {
+            # say dumper $self->fisher_yates_shuffle($from_pend)->map(sub { $_->canonical_jobid });
+
+            if ($needed <= $from_run->size) {
+                $self->switch($self->fisher_yates_shuffle($from_run)->slice(0 .. $needed));
+                $needed = 0;
+            } else {
+                $self->switch($from_run);
+                $needed -= $from_run->size;
+            }
+            ## still need some more
+            if ($needed) {
+                $self->switch($self->fisher_yates_shuffle($from_pend)->slice(0 .. $needed));
+            }
+        }
+    }
+
+    return $self->app_result;
+};
+
+=encoding utf8
+
+=head1 NAME
+
+switcheroo - utility to switch jobs between queues
+
+=head1 DESCRIPTION
+
+The aim of this script is to elevate some jobs from a lower priority queue to a
+higher priority queue, while maintaining most pending jobs in the lower priority
+queue.
+
+=head1 SYNOPSIS
+
+ switcheroo [options]
+
+Examples:
+
+ switcheroo
+
+ switcheroo -from low -to high
+
+ switcheroo --help
+
+=cut
