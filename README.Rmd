@@ -1,0 +1,97 @@
+cmdtk
+=====
+
+A toolkit of commands
+
+
+Setup
+-----
+
+Create a perlbrew library and install module dependencies
+
+```{r engine="bash"}
+#
+# modules
+#
+module unload perl
+module load perlbrew
+
+## Create perlbrew environment
+
+#
+# choose the perl and library name
+#
+perlVersion=5.26.0
+library=cmdtk
+perlbrew_lib="${perlVersion}@${library}"
+
+#
+# create the library and load, reporting as loaded
+#
+perlbrew lib create $perlbrew_lib
+eval $(perlbrew --quiet env $perlbrew_lib)
+__perlbrew_set_path
+
+#
+# populate the library with the required code
+#
+cpanm --installdeps --cpanfile ./cpanfile -n -q .
+```
+
+Pod documentation
+-----------------
+
+```{r engine="bash"}
+#
+# modules
+#
+module unload perl
+module load perlbrew
+
+## Create perlbrew environment
+
+#
+# choose the perl and library name
+#
+perlVersion=5.26.0
+library=cmdtk
+perlbrew_lib="${perlVersion}@${library}"
+
+#
+# load, reporting as loaded
+#
+eval $(perlbrew --quiet env $perlbrew_lib)
+__perlbrew_set_path
+
+perl scripts/table --help
+```
+
+Unit tests
+----------
+
+The script also contains unit testing
+
+```{r engine="bash"}
+#
+# modules
+#
+module unload perl
+module load perlbrew
+
+## Create perlbrew environment
+
+#
+# choose the perl and library name
+#
+perlVersion=5.26.0
+library=cmdtk
+perlbrew_lib="${perlVersion}@${library}"
+
+#
+# load, reporting as loaded
+#
+eval $(perlbrew --quiet env $perlbrew_lib)
+__perlbrew_set_path
+
+prove -r t
+```
